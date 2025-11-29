@@ -1,31 +1,498 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>大学教务管理系统</title>
+    <title>大学教务管理系统 (单文件版)</title>
+    
+    <!-- 核心依赖库 CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Recharts (图表库) UMD -->
+    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    
+    <!-- 引入 Lucide Icons UMD -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide-react@latest/dist/lucide-react.min.js"></script>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: #f3f4f6;
-      }
+      body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+      /* 简单的加载动画 */
+      .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #3498db; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "recharts": "https://aistudiocdn.com/recharts@^3.5.1"
-  }
-}
-</script>
+
+    <!-- Google GenAI SDK (Module) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/genai": "https://esm.run/@google/genai"
+        }
+      }
+    </script>
 </head>
-  <body>
+<body>
     <div id="root"></div>
-  </body>
+
+    <script type="text/babel" data-type="module">
+        import { GoogleGenAI } from "@google/genai";
+        
+        // --- 1. 模拟环境配置 (VS Code 本地运行时请在此填入 API Key) ---
+        const ENV_API_KEY = ""; // 在这里填入你的 Gemini API Key
+
+        const { useState, useEffect, useMemo } = React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } = Recharts;
+        const { User: UserIcon, Shield, KeyRound, LogOut, GraduationCap, BookOpen, Trophy, Users, Save, Server, Globe, Plus, Trash2, Loader2 } = LucideReact;
+
+        // --- 2. 类型定义与 Mock 数据 ---
+        const UserRole = {
+            STUDENT: 'STUDENT',
+            TEACHER: 'TEACHER',
+            ADMIN: 'ADMIN'
+        };
+
+        // 模拟数据库类
+        class MockDatabase {
+            constructor() {
+                this.users = [
+                    { id: '1', name: '管理员', username: 'admin', role: UserRole.ADMIN },
+                    { id: '2', name: '李老师', username: 'teacher', role: UserRole.TEACHER },
+                    { id: '3', name: '张三', username: 'student', role: UserRole.STUDENT, major: '计算机科学', classYear: '2021级' },
+                    { id: '4', name: '李四', username: 'student2', role: UserRole.STUDENT, major: '计算机科学', classYear: '2021级' },
+                ];
+                this.courses = [
+                    { id: '101', name: '高等数学', credits: 4, teacherId: '2', teacherName: '李老师' },
+                    { id: '102', name: 'Python程序设计', credits: 3, teacherId: '2', teacherName: '李老师' },
+                    { id: '103', name: '数据结构', credits: 4, teacherId: '2', teacherName: '李老师' },
+                    { id: '104', name: '计算机网络', credits: 3, teacherId: '2', teacherName: '李老师' },
+                    { id: '105', name: '操作系统', credits: 4, teacherId: '2', teacherName: '李老师' },
+                ];
+                this.grades = [
+                    { id: 'g1', studentId: '3', studentName: '张三', courseId: '101', courseName: '高等数学', score: 85 },
+                    { id: 'g2', studentId: '3', studentName: '张三', courseId: '102', courseName: 'Python程序设计', score: 92 },
+                    { id: 'g3', studentId: '4', studentName: '李四', courseId: '101', courseName: '高等数学', score: 78 },
+                    { id: 'g4', studentId: '4', studentName: '李四', courseId: '102', courseName: 'Python程序设计', score: 88 },
+                    { id: 'g5', studentId: '3', studentName: '张三', courseId: '104', courseName: '计算机网络', score: 89 },
+                    { id: 'g6', studentId: '3', studentName: '张三', courseId: '105', courseName: '操作系统', score: 95 },
+                    { id: 'g7', studentId: '4', studentName: '李四', courseId: '104', courseName: '计算机网络', score: 76 },
+                    { id: 'g8', studentId: '4', studentName: '李四', courseId: '105', courseName: '操作系统', score: 82 },
+                ];
+            }
+
+            async delay(ms = 300) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+            async login(username) {
+                await this.delay();
+                return this.users.find(u => u.username === username) || null;
+            }
+
+            async getStudentGrades(studentId) {
+                await this.delay();
+                return this.grades.filter(g => g.studentId === studentId);
+            }
+
+            async updateStudentInfo(studentId, info) {
+                await this.delay();
+                const idx = this.users.findIndex(u => u.id === studentId);
+                if (idx !== -1) this.users[idx] = { ...this.users[idx], ...info };
+            }
+
+            async getTeacherCourses(teacherId) {
+                await this.delay();
+                return this.courses.filter(c => c.teacherId === teacherId);
+            }
+
+            async getCourseGrades(courseId) {
+                await this.delay();
+                return this.grades.filter(g => g.courseId === courseId);
+            }
+
+            async updateGrade(gradeId, newScore) {
+                await this.delay();
+                const g = this.grades.find(x => x.id === gradeId);
+                if (g) g.score = newScore;
+            }
+
+            async addGrade(studentId, courseId, score) {
+                await this.delay();
+                const student = this.users.find(u => u.id === studentId);
+                const course = this.courses.find(c => c.id === courseId);
+                if (student && course) {
+                    this.grades.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        studentId, studentName: student.name,
+                        courseId, courseName: course.name,
+                        score
+                    });
+                }
+            }
+
+            async getAllUsers() { await this.delay(); return [...this.users]; }
+            async getAllCourses() { await this.delay(); return [...this.courses]; }
+            
+            async deleteUser(userId) {
+                await this.delay();
+                this.users = this.users.filter(u => u.id !== userId);
+                this.grades = this.grades.filter(g => g.studentId !== userId);
+            }
+
+            async deleteCourse(courseId) {
+                await this.delay();
+                this.courses = this.courses.filter(c => c.id !== courseId);
+                this.grades = this.grades.filter(g => g.courseId !== courseId);
+            }
+
+            async addCourse(course) {
+                await this.delay();
+                this.courses.push({ ...course, id: Math.random().toString(36).substr(2, 9) });
+            }
+        }
+        const db = new MockDatabase();
+
+        // --- 3. Gemini Service (AI 爬虫) ---
+        const generateCourses = async (topic, teacherName, teacherId) => {
+            // 优先使用 injected env，其次使用顶部定义的变量
+            const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : ENV_API_KEY;
+            
+            if (!apiKey) {
+                alert("请先配置 API Key 才能使用 AI 爬虫功能");
+                return [];
+            }
+
+            const ai = new GoogleGenAI({ apiKey });
+            try {
+                const response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: `Generate 3 realistic university courses related to "${topic}". They should be taught by ${teacherName}. Output JSON format with name, credits, description.`,
+                    config: { responseMimeType: "application/json" }
+                });
+                const data = JSON.parse(response.text);
+                // 兼容返回格式可能包裹在 items 或者直接数组的情况
+                const list = Array.isArray(data) ? data : (data.items || []);
+                return list.map(item => ({
+                    name: item.name,
+                    credits: item.credits,
+                    description: item.description,
+                    teacherId, teacherName
+                }));
+            } catch (error) {
+                console.error("AI Error:", error);
+                alert("AI 生成失败，请检查 API Key 或网络");
+                return [];
+            }
+        };
+
+        // --- 4. 页面组件 ---
+
+        // [登录组件]
+        const Login = ({ onLogin }) => {
+            const [username, setUsername] = useState('student');
+            const [password, setPassword] = useState('123456');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                try {
+                    const user = await db.login(username);
+                    if (user) onLogin({ isAuthenticated: true, user });
+                    else setError('用户不存在 (试用: admin / teacher / student)');
+                } catch(e) { setError('登录失败'); }
+                setLoading(false);
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-700 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+                        <div className="text-center mb-8">
+                            <Shield className="w-12 h-12 text-blue-600 mx-auto mb-2" />
+                            <h1 className="text-2xl font-bold text-gray-800">教务管理系统</h1>
+                            <p className="text-gray-500">单文件便携版</p>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">账号</label>
+                                <div className="relative mt-1">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center"><UserIcon className="h-5 w-5 text-gray-400"/></div>
+                                    <input type="text" value={username} onChange={e=>setUsername(e.target.value)} className="block w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">密码</label>
+                                <div className="relative mt-1">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center"><KeyRound className="h-5 w-5 text-gray-400"/></div>
+                                    <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="block w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                            </div>
+                            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                            <button type="submit" disabled={loading} className="w-full py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors">
+                                {loading ? '登录中...' : '登录'}
+                            </button>
+                        </form>
+                        <div className="mt-6 text-center text-xs text-gray-400">
+                            测试账号: admin / teacher / student (密码任意)
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [学生视图]
+        const StudentView = ({ user }) => {
+            const [grades, setGrades] = useState([]);
+            const [activeTab, setActiveTab] = useState('grades');
+            const [profile, setProfile] = useState({ name: user.name, major: user.major });
+
+            useEffect(() => { db.getStudentGrades(user.id).then(setGrades); }, [user.id]);
+
+            const updateProfile = async () => {
+                await db.updateStudentInfo(user.id, profile);
+                alert("修改成功");
+            };
+
+            const avgScore = grades.length ? (grades.reduce((a,b)=>a+b.score,0)/grades.length).toFixed(1) : 0;
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border flex items-center gap-4">
+                            <div className="bg-blue-100 p-3 rounded-full"><UserIcon className="text-blue-600"/></div>
+                            <div><p className="text-gray-500 text-sm">学生</p><h3 className="text-lg font-bold">{user.name}</h3></div>
+                        </div>
+                        <div className="bg-white p-6 rounded-xl shadow-sm border flex items-center gap-4">
+                            <div className="bg-green-100 p-3 rounded-full"><Trophy className="text-green-600"/></div>
+                            <div><p className="text-gray-500 text-sm">平均分</p><h3 className="text-lg font-bold">{avgScore}</h3></div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        <div className="flex border-b">
+                            <button onClick={()=>setActiveTab('grades')} className={`flex-1 py-3 ${activeTab==='grades'?'text-blue-600 border-b-2 border-blue-600':'text-gray-500'}`}>成绩单</button>
+                            <button onClick={()=>setActiveTab('profile')} className={`flex-1 py-3 ${activeTab==='profile'?'text-blue-600 border-b-2 border-blue-600':'text-gray-500'}`}>个人信息</button>
+                        </div>
+                        <div className="p-6">
+                            {activeTab === 'grades' ? (
+                                <div className="space-y-8">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs text-gray-500">课程</th><th className="px-6 py-3 text-left text-xs text-gray-500">分数</th></tr></thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                            {grades.map(g => (
+                                                <tr key={g.id}><td className="px-6 py-4 text-sm font-medium">{g.courseName}</td><td className="px-6 py-4 text-sm text-blue-600 font-bold">{g.score}</td></tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={grades}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="courseName"/><YAxis/><Tooltip/><Bar dataKey="score" fill="#3b82f6" name="分数"/></BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="max-w-md mx-auto space-y-4">
+                                    <input type="text" value={profile.name} onChange={e=>setProfile({...profile, name:e.target.value})} className="block w-full border rounded p-2" placeholder="姓名"/>
+                                    <input type="text" value={profile.major} onChange={e=>setProfile({...profile, major:e.target.value})} className="block w-full border rounded p-2" placeholder="专业"/>
+                                    <button onClick={updateProfile} className="w-full bg-blue-600 text-white py-2 rounded">保存</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [教师视图]
+        const TeacherView = ({ user }) => {
+            const [courses, setCourses] = useState([]);
+            const [selectedCourse, setSelectedCourse] = useState('');
+            const [grades, setGrades] = useState([]);
+            const [students, setStudents] = useState([]);
+            const [newGrade, setNewGrade] = useState({ sid: '', score: '' });
+
+            useEffect(() => {
+                db.getTeacherCourses(user.id).then(c => {
+                    setCourses(c);
+                    if(c.length) setSelectedCourse(c[0].id);
+                });
+                db.getAllUsers().then(u => setStudents(u.filter(x=>x.role===UserRole.STUDENT)));
+            }, [user.id]);
+
+            useEffect(() => { if(selectedCourse) loadGrades(); }, [selectedCourse]);
+
+            const loadGrades = () => db.getCourseGrades(selectedCourse).then(setGrades);
+
+            const addGrade = async () => {
+                if(!newGrade.sid || !newGrade.score) return;
+                await db.addGrade(newGrade.sid, selectedCourse, parseFloat(newGrade.score));
+                setNewGrade({ sid: '', score: '' });
+                loadGrades();
+            };
+
+            const pieData = [
+                { name: '及格', value: grades.filter(g=>g.score>=60).length },
+                { name: '不及格', value: grades.filter(g=>g.score<60).length }
+            ];
+            const COLORS = ['#10B981', '#EF4444'];
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center">
+                        <h2 className="font-bold text-lg">课程管理</h2>
+                        <select value={selectedCourse} onChange={e=>setSelectedCourse(e.target.value)} className="border rounded p-1">
+                            {courses.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white p-6 rounded-xl shadow-sm border">
+                            <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="w-4 h-4"/> 成绩录入</h3>
+                            <div className="flex gap-2 mb-4">
+                                <select className="border rounded p-2 flex-1 text-sm" value={newGrade.sid} onChange={e=>setNewGrade({...newGrade, sid:e.target.value})}>
+                                    <option value="">选择学生</option>
+                                    {students.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                                <input type="number" className="border rounded p-2 w-20 text-sm" placeholder="分" value={newGrade.score} onChange={e=>setNewGrade({...newGrade, score:e.target.value})}/>
+                                <button onClick={addGrade} className="bg-blue-600 text-white px-3 rounded text-sm">添加</button>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50"><tr><th className="p-2">学生</th><th className="p-2">分数</th></tr></thead>
+                                    <tbody>
+                                        {grades.map(g=><tr key={g.id} className="border-t"><td className="p-2">{g.studentName}</td><td className="p-2">{g.score}</td></tr>)}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-xl shadow-sm border h-80">
+                            <h3 className="font-bold mb-2">及格率分析</h3>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value">
+                                        {pieData.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                                    </Pie>
+                                    <Tooltip/><Legend/>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // [管理员视图]
+        const AdminView = () => {
+            const [tab, setTab] = useState('courses');
+            const [users, setUsers] = useState([]);
+            const [courses, setCourses] = useState([]);
+            const [crawlTopic, setCrawlTopic] = useState('大数据');
+            const [crawling, setCrawling] = useState(false);
+
+            useEffect(() => load(), []);
+            const load = async () => {
+                const [u, c] = await Promise.all([db.getAllUsers(), db.getAllCourses()]);
+                setUsers(u); setCourses(c);
+            };
+
+            const delUser = async (id) => { if(confirm('删除?')) { await db.deleteUser(id); load(); } };
+            const delCourse = async (id) => { if(confirm('删除?')) { await db.deleteCourse(id); load(); } };
+            
+            const handleCrawl = async () => {
+                setCrawling(true);
+                const teacher = users.find(u => u.role === UserRole.TEACHER);
+                if(!teacher) { alert("无教师"); setCrawling(false); return; }
+                
+                const newCourses = await generateCourses(crawlTopic, teacher.name, teacher.id);
+                for(const c of newCourses) await db.addCourse(c);
+                await load();
+                setCrawling(false);
+                alert(`导入 ${newCourses.length} 门课程`);
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                        <div className="flex border-b">
+                            <button onClick={()=>setTab('courses')} className={`flex-1 py-3 ${tab==='courses'?'bg-blue-50 text-blue-600':''}`}>课程管理</button>
+                            <button onClick={()=>setTab('users')} className={`flex-1 py-3 ${tab==='users'?'bg-blue-50 text-blue-600':''}`}>用户管理</button>
+                        </div>
+                        <div className="p-6">
+                            {tab === 'courses' ? (
+                                <div className="space-y-4">
+                                    <div className="bg-indigo-50 p-4 rounded border border-indigo-100 flex gap-2 items-center">
+                                        <Globe className="w-4 h-4 text-indigo-600"/>
+                                        <input value={crawlTopic} onChange={e=>setCrawlTopic(e.target.value)} className="border rounded px-2 py-1 text-sm flex-1" placeholder="课程主题"/>
+                                        <button onClick={handleCrawl} disabled={crawling} className="bg-indigo-600 text-white px-3 py-1 rounded text-sm flex items-center gap-1">
+                                            {crawling ? <Loader2 className="animate-spin w-3 h-3"/> : <Plus className="w-3 h-3"/>} 智能导入
+                                        </button>
+                                    </div>
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-gray-50"><tr><th className="p-2 text-left">名称</th><th className="p-2 text-left">教师</th><th className="p-2 text-right">操作</th></tr></thead>
+                                        <tbody>
+                                            {courses.map(c=>(
+                                                <tr key={c.id} className="border-t">
+                                                    <td className="p-2 font-medium">{c.name}</td>
+                                                    <td className="p-2 text-gray-500">{c.teacherName}</td>
+                                                    <td className="p-2 text-right"><button onClick={()=>delCourse(c.id)} className="text-red-500"><Trash2 className="w-4 h-4"/></button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <table className="min-w-full text-sm">
+                                    <thead className="bg-gray-50"><tr><th className="p-2 text-left">姓名</th><th className="p-2 text-left">角色</th><th className="p-2 text-right">操作</th></tr></thead>
+                                    <tbody>
+                                        {users.map(u=>(
+                                            <tr key={u.id} className="border-t">
+                                                <td className="p-2 font-medium">{u.name}</td>
+                                                <td className="p-2"><span className="bg-gray-100 px-2 py-0.5 rounded text-xs">{u.role}</span></td>
+                                                <td className="p-2 text-right"><button onClick={()=>delUser(u.id)} disabled={u.role==='ADMIN'} className="text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4"/></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 5. 主应用入口 ---
+        const App = () => {
+            const [auth, setAuth] = useState({ isAuthenticated: false, user: null });
+
+            if (!auth.isAuthenticated) return <Login onLogin={setAuth} />;
+
+            return (
+                <div className="min-h-screen bg-gray-50 flex flex-col">
+                    <header className="bg-white shadow-sm sticky top-0 z-10 px-6 h-16 flex justify-between items-center">
+                        <div className="flex items-center gap-2 text-blue-600">
+                            <GraduationCap className="h-8 w-8" />
+                            <span className="font-bold text-gray-900">教务系统</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="text-right text-sm"><p>{auth.user.name}</p></div>
+                            <button onClick={()=>setAuth({isAuthenticated:false,user:null})} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"><LogOut className="w-5 h-5"/></button>
+                        </div>
+                    </header>
+                    <main className="max-w-7xl mx-auto p-6 w-full flex-1">
+                        {auth.user.role === UserRole.STUDENT && <StudentView user={auth.user} />}
+                        {auth.user.role === UserRole.TEACHER && <TeacherView user={auth.user} />}
+                        {auth.user.role === UserRole.ADMIN && <AdminView />}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
 </html>
